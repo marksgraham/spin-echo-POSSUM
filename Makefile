@@ -66,5 +66,7 @@ tcalc: ${THEORYOBJ}
 	${CXX} ${CXXFLAGS} ${LDFLAGS} -o $@ ${THEORYOBJ} ${LIBS}
 
 matlabfiles:
-	@if [ ! -d ${DESTDIR}/etc/matlab ] ; then ${MKDIR} -p ${DESTDIR}/etc/matlab ; ${CHMOD} -R g+w ${DESTDIR}/etc ; fi
-	${CP} ${MFILES} ${DESTDIR}/etc/matlab
+	#@if [ ! -d ${DESTDIR}/etc/matlab ] ; then ${MKDIR} -p ${DESTDIR}/etc/matlab ; ${CHMOD} -R g+w ${DESTDIR}/etc ; fi
+	#${CP} ${MFILES} ${DESTDIR}/etc/matlab
+	mkdir bin
+	${MV} ${XFILES} bin/
