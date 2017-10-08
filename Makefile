@@ -68,5 +68,5 @@ tcalc: ${THEORYOBJ}
 matlabfiles:
 	#@if [ ! -d ${DESTDIR}/etc/matlab ] ; then ${MKDIR} -p ${DESTDIR}/etc/matlab ; ${CHMOD} -R g+w ${DESTDIR}/etc ; fi
 	#${CP} ${MFILES} ${DESTDIR}/etc/matlab
-	mkdir bin
+	#mkdir bin
 	${MV} ${XFILES} bin/
