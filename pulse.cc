@@ -1390,8 +1390,18 @@ int compute_volume(){
     pulse=gradecho(n,zc,ns,slcthk,slcdir_int,phasedir_int,readdir_int,resX,resY);
     write_binary_matrix(pulse,opt_pulse.value());
   } 
+  if (opt_seq.value() == "se-epi") {
+  seqnum = 3;
+  pulse = spinechoepi(n, zc, ns, slcthk, slcdir_int, phasedir_int, readdir_int, resX, resY, bottom, top);
+  write_binary_matrix(pulse, opt_pulse.value());
+  }
+  if (opt_seq.value() == "se") {
+   seqnum = 4;
+    pulse = spinecho(n, zc, ns, slcthk, slcdir_int, phasedir_int, readdir_int, resX, resY);
+   write_binary_matrix(pulse, opt_pulse.value());
+  }
   RowVector pulseinfo(22);
-  pulseinfo(1)=seqnum;// 1 for epi, 2 for ge
+  pulseinfo(1)=seqnum;// 1 for epi, 2 for ge, 3 for se-epi, 4 for se
   pulseinfo(2)=opt_TE.value();
   pulseinfo(3)=opt_TR.value();
   pulseinfo(4)=opt_TRslc.value();
