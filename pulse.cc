@@ -104,7 +104,7 @@ Option<string> opt_object(string("-i,--inp"), string(""),
 
 //INPUT pulse sequence properties 
 Option<string> opt_seq(string("--seq"), string("epi"),
-		  string("default=epi (epi OR ge)"),
+		  string("default=epi (epi OR ge OR se-epi OR se)"),
 		  false, requires_argument);
 Option<float>  opt_angle(string("--angle"),90,
 		  string("default=90 (flip angle in degrees)"),
@@ -695,6 +695,545 @@ for (int a=1;a<=n;a++)
  }
 
  return M;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+PMatrix spinechoepi(const int n, const RowVector zc, const int ns, const double ddz, const int slcdir_int, const int phasedir_int, const int readdir_int, const int resX, const int resY, const int bottom, const int top) {
+// Input parameters: n = number of volumes, ns = number of slices (per volume)
+//   ddz = slice thickness (m) , zc = coordinate of slice centre (m)
+  //EPISEQUENCE MATRIX INPUTFILE
+//(1)=time in s,(2)=rf angle,(3)=rf frequency bandwidth df(Hz),(4)=rf center frequency fc(Hz),(5)=readout 1/0 (6)=x gradient(T/m),(7)=y gradient(T/m),(8)=z gradient(T/m)
+/////////////////////////////////
+//SLICE DIRECTION
+////////////////////////////////
+  int aa = 6;
+  int bb = 7;
+  int cc = 8;
+//slc
+  if (abs(slcdir_int) == 1) cc = 8;
+  if (abs(slcdir_int) == 2) cc = 7;
+  if (abs(slcdir_int) == 3) cc = 6;
+//phase
+  if (abs(phasedir_int) == 1) bb = 8;
+  if (abs(phasedir_int) == 2) bb = 7;
+  if (abs(phasedir_int) == 3) bb = 6;
+//read
+  if (abs(readdir_int) == 1) aa = 8;
+  if (abs(readdir_int) == 2) aa = 7;
+  if (abs(readdir_int) == 3) aa = 6;
+
+  int bhelp = 0;
+  int simdir = 1;
+  int phdir = 1;
+  int redir = 1;
+  if (slcdir_int < 0) {
+    bhelp = ns + 1;
+    simdir = -1;
+  }
+  if (phasedir_int < 0) {
+    phdir = -1;
+  }
+  if (readdir_int < 0) {
+    redir = -1;
+  }
+
+/////////////////////////////
+//INPUT PARAMETERS
+////////////////////////////
+  float angle = opt_angle.value();
+  float angle_rad = angle * M_PI / 180;
+  double bw = (double) (opt_BWrec.value()); //BW
+  double TE = (double) (opt_TE.value());
+  double TR = (double) (opt_TR.value());
+  double TRslc = (double) (opt_TRslc.value());
+  if (round_ivana(TRslc, 5)*ns > round_ivana(TR, 5)) {
+    cout << "WARNING:TR>=TRslc*numslc and your values TR=" << TR << "; TRslc=" << TRslc << "; numslc=" << ns << " do not satisfy this." << endl;
+    exit(EXIT_FAILURE);
+  }
+  double rt = (double) (opt_risetime.value());
+  double maxG = (double) (opt_maxG.value());
+  double dx = (double) (opt_dx.value());
+  double dy = (double) (opt_dy.value());
+  double tana = maxG / rt;
+///////////////////////////
+//SLICE SELECTION - works for all slice select direction. Gz is slice select gradient NOT Gz gradient.
+///////////////////////////
+  double Gz = 7.128 * 1e-03; //slice select gradient during rf excitation (in T/m)
+  double dtz = Gz / tana;
+  double rft = 4 * 0.001;
+//tejas-changed -- 26.10.12
+//  OLD
+// double dtz1=sqrt(Gz*(dtz+rft)*2/tana);
+// double Gz1=dtz1*tana/2;
+
+//  NEW
+  double dtz11 = sqrt(((rft + dtz) * Gz) / (2 * tana));
+  double Gz1 = ((rft + dtz) * Gz) / (2 * dtz11);
+//  29.10.11: dtz11 is time for 0 to Gz1; dtz1 is the total time for the negative pulse
+  double dtz1 = dtz11 * 2;
+//tejas-end
+
+  double TA = rft / 2 + dtz + dtz1; //when all rf stuff ends
+  double df = ddz * gammabar * Gz; //frequency width (in m*Hz/T*T/m=Hz),
+//cout<<"frequency width     "<<df<<endl;
+  double t = 0; //time (in ms)
+//double offset=0;//for now (in m)
+  int step = 1; //row number in the matrix
+  RowVector fc = zc * gammabar * Gz;
+  cout << "Vector of centers of slices is (m) " << zc << endl;
+  cout << "Vector of corresponding frequences is (Hz) " << fc << endl; //vector of centers of frequences (Hz)
+///////////////////////////
+//READ OUT
+///////////////////////////
+  double dtx = 1 / bw; //sampling time along the readout direction
+  double dkx = 1 / (resX * dx); //dimensions of sampling distances in the k-space
+  double dky = 1 / (resY * dy);
+  double kx, ky, kz; //for calculating the positions in the k-space by summing the areas.
+  double Gx = dkx / (gammabar * dtx); //coming from dtx*gammabar*Gx=dkx
+  double dt = Gx / tana;
+  double dty = sqrt(4 * dky / (gammabar * tana));
+  double Gy = dty * tana / 2;
+  double dtx1 = sqrt(Gx * (dt + resX * dtx) * 2 / tana);
+  double Gx1 = dtx1 * tana / 2;
+  double dty1 = sqrt(bottom) * dty;
+  double Gy1 = dty1 * tana / 2;
+  double TEl = bottom * (2 * dt + (resX - 1) * dtx) + (dt + resX / 2 * dtx); //TE is on the (resX/2+1,resY/2+1)point in the k-space
+  double TEr = top * (2 * dt + (resX - 1) * dtx) + (dt + (resX / 2 - 1) * dtx);
+  double TD = TE - TEl;
+  double TC = TD - dtx1;
+  double TB = TC - dty1;
+  double TF = TE + TEr;
+  double tcrush = 2 * rt; //not sure which number is the best ... March 2008
+  double TG = TF + 2 * rt + tcrush; //100rt is how much is needed to make ggx ggy and ggz become 100 times larger which will reduce the signal 100 times -----  still in process of testing dec 20
+  double TH = TE/2; //Time the 180 RF pulse is applied
+  cout << "Times in the acquisition of one slice starting from the RF pulse (in s)" << endl;
+  cout << "the slice selection gradient is done TA=" << TA << endl;
+  cout << "the 180 RF pulse is applied =" << TH << endl;
+  cout << "the phase encode gradient starts dephasing TB=" << TB << endl;
+  cout << "the phase encode gradient stops dephasing, and the read-out gradient starts dephasing TC=" << TC << endl;
+  cout << "the read-out gradient stops dephasing,begining of the read-out period TD=" << TD << endl;
+  cout << "echo time TE=" << TE << endl;
+  cout << "end of the read-out period and begining of the crushers TF=" << TF << endl;
+  cout << "end of the crushers TG=" << TG << endl;
+  cout << "end of the acquisition of one slice TRslc=" << TRslc << endl;
+  if (TD < 0 || TB < 0 || TA < 0 || TC < 0 || TF > TRslc || TG > TRslc) {
+    cout << "WARNING:TE is not long enough to accomodate for the resX, resY, and the BW" << endl;
+    exit(EXIT_FAILURE);
+  }
+  if (TH < TA || TH > TB || TH > TC || TH > TD ) {
+    cout << "WARNING: TE is not long enough to accomodate the 180 RF pulse" << endl;
+    exit(EXIT_FAILURE);
+  }
+  cout.precision(20);
+  double TRF = 0;
+////////////////////////////
+//FIRST LOOP TO CALCULATE THE SIZE
+///////////////////////////
+  for (int a = 1; a <= n; a++) {
+    //cout<<"--Volume number----"<<a<<"-------"<<endl;
+    for (int b = 1; b <= ns; b++) {
+      t += dtz; step = step + 1;
+      t += rft / 2; step = step + 1;
+      TRF = t;
+      t += rft / 2; step = step + 1;
+      t += dtz; step = step + 1;
+      t += dtz1 / 2; step = step + 1;
+      t += dtz1 / 2; step = step + 1;
+      step = step + 4; //extra steps for 180 pulse
+      t = TRF + TB; step = step + 1;
+      t += dty1 / 2; step = step + 1;
+      t += dty1 / 2; step = step + 1;
+      t += dtx1 / 2; step = step + 1;
+      t += dtx1 / 2; step = step + 1;
+      for (int c = 1; c <= bottom + 1 + top; c++) {
+        if (c == 1) {
+          t += dt; step = step + 1;
+        } else {
+          t += dty / 2; step = step + 1;
+          t += dt - dty / 2; step = step + 1;
+        }
+        for (int d = 1; d <= resX - 1; d++) {
+          t += dtx; step = step + 1;
+        }
+        if (c == bottom + 1 + top) {
+          t += dt; step = step + 1;
+        } else {
+          t += dt - dty / 2; step = step + 1;
+          t += dty / 2; step = step + 1;
+        }
+      }
+      /////////////////Crushers
+      t += rt; step = step + 1;
+      t += tcrush; step = step + 1;
+      t += rt; step = step + 1;
+      t = (double) (TRslc * b + (a - 1) * TR); step = step + 1;
+    }
+    double tt = t;
+    t = (double) (TR * a);
+    if (t - tt > 1e-06) {
+      step = step + 1;
+    }
+    if (t - tt < -1e06) {
+      cout << "WARNING:TR is shorter than Nslc*TRslc" << endl;
+      exit(EXIT_FAILURE);
+    }
+  }
+////////////////////////////
+//MAIN LOOP
+///////////////////////////
+
+  int nreadp = n * ns * resX * resY;
+  int readstep = 0;
+  PMatrix M(step, 8); //main epi matrix
+  M = 0.0;
+  t = 0; step = 1; //restarting those
+  Matrix coord(2, nreadp); //matrix for the kspace coordinates, 1st raw for kx and 2nd for ky
+  for (int a = 1; a <= n; a++) {
+    //cout<<"--Volume number----"<<a<<"-------"<<endl;
+    for (int b = 1; b <= ns; b++) {
+      kx = 0; ky = 0; kz = 0;
+      ////////////////slice selection //have to work more on this, quite primitive at the moment
+      //cout<<"--Slice number----"<<b<<"-------"<<endl;
+      //cout<<"Time at the begining of slice acquisition: "<<t<<endl;
+      t += dtz; step = step + 1; M.time(step) = t; M(step, cc) = Gz; //kz=kz+M(step,cc)*dtz/2;//TC
+      t += rft / 2; step = step + 1; M.time(step) = t; M(step, 2) = angle_rad; M(step, 3) = df; M(step, 4) = fc(bhelp + simdir * b); M(step, cc) = Gz; //kz=kz+M(step,cc)*rft/2;//TRF
+      TRF = t;
+      //cout<<"The time when the RF pulse happenes for the VolNum "<<a<<" and the SlcNum "<<b<<" is TRF="<<TRF<<endl;
+      t += rft / 2; step = step + 1; M.time(step) = t; M(step, cc) = Gz; kz = kz + M(step, cc) * rft / 2;
+      t += dtz; step = step + 1; M.time(step) = t; kz = kz + M(step - 1, cc) * dtz / 2;
+      t += dtz1 / 2; step = step + 1; M.time(step) = t; M(step, cc) = -Gz1; kz = kz + M(step, cc) * dtz1 / 4;
+      t += dtz1 / 2; step = step + 1; M.time(step) = t; kz = kz + M(step - 1, cc) * dtz1 / 4; //TA
+      //cout<<"End of slice selection and dephasing TA= "<<t<<endl;
+      //cout<<"kz= "<<kz<<endl;
+
+      //Apply 180 pulse
+      //DONT increase kz because Gz is symmetric around 180 pulse?
+      t = (TRslc*(b-1)+TH +rft/2); step = step + 1; M.time(step) = t;
+      t += dtz; step = step + 1; M.time(step) = t; M(step, 2) = 2*angle_rad; M(step, 3) = df; M(step, 4) = fc(bhelp + simdir * b); M(step, cc) = Gz; //kz=kz+M(step,cc)*rft/2;//TRF
+      t += dtz; step = step + 1; M.time(step) = t; M(step, cc) = -Gz;
+      t += dtz; step = step + 1; M.time(step) = t;
+  
+
+
+
+      ////////////////dephase
+      t = TRF + TB; step = step + 1; M.time(step) = t; //TB
+      //cout<<"Begining of the Gy gradient TB= "<<t<<endl;
+      t += dty1 / 2; step = step + 1; M.time(step) = t; M(step, bb) = -phdir * Gy1; ky = ky + M(step, bb) * dty1 / 4;
+      t += dty1 / 2; step = step + 1; M.time(step) = t;  ky = ky + M(step - 1, bb) * dty1 / 4; //TC
+      //cout<<"End of Gy and begining of Gx, TC= "<<t<<endl;
+      t += dtx1 / 2; step = step + 1; M.time(step) = t; M(step, aa) = -redir * Gx1; kx = kx + M(step, aa) * dtx1 / 4;
+      t += dtx1 / 2; step = step + 1; M.time(step) = t; kx = kx + M(step - 1, aa) * dtx1 / 4; //TD
+      //cout<<"Begining of the read-out TD= "<<t<<endl;
+      ////////////////readout
+      for (int c = 1; c <= bottom + 1 + top; c++) {
+        if (c == 1) {
+          t += dt; step = step + 1; M.time(step) = t; M(step, 5) = 1; M(step, aa) = redir * Gx; kx = kx + M(step, aa) * dt / 2; readstep = readstep + 1;
+          //  cout<<"The first point in the k-space for the VolNum "<<a<<" and the SlcNum "<<b<<" is (kx,ky)="<<"("<<kx*gammabar<<","<<ky*gammabar<<")"<<endl;
+          coord(1, readstep) = kx * gammabar;
+          coord(2, readstep) = ky * gammabar;
+        } else {
+          t += dty / 2; step = step + 1; M.time(step) = t; M(step, aa) = MISCMATHS::pow(-1.0f, (double) c + 1) * dty * tana / 2; ky = ky + dty * M(step - 1, bb) / 4; kx = kx + M(step, aa) * dty / 4;
+          t += dt - dty / 2; step = step + 1; M.time(step) = t; M(step, 5) = 1; M(step, aa) = MISCMATHS::pow(-1.0f, (double) c + 1) * redir * Gx; kx = kx + (M(step, aa) + M(step - 1, aa)) * (dt - dty / 2) / 2; readstep = readstep + 1;
+          coord(1, readstep) = kx * gammabar;
+          coord(2, readstep) = ky * gammabar;
+        }
+        for (int d = 1; d <= resX - 1; d++) {
+          t += dtx; step = step + 1; M.time(step) = t; M(step, 5) = 1; M(step, aa) = MISCMATHS::pow(-1.0f, (double) c + 1) * redir * Gx; kx = kx + M(step, aa) * dtx; readstep = readstep + 1;
+          if (c == bottom + 1 && d == (resX / 2)) {
+            cout << "--------" << endl;
+            cout << "Time at the center of the k-space is TE= " << t - (a - 1)*TR - dtz - rft / 2 << endl;
+            cout << "Time we want to have is TE= " << TE << endl;
+            cout << "The center of the k-space for the VolNum " << a << " and the SlcNum " << b << " is (kx,ky)=" << "(" << kx*gammabar << "," << ky*gammabar << ")" << endl; //TE
+            cout << "--------" << endl;
+          }
+          coord(1, readstep) = kx * gammabar;
+          coord(2, readstep) = ky * gammabar;
+        }
+        if (c == bottom + 1 + top) {
+          t += dt; step = step + 1; M.time(step) = t; kx = kx + M(step - 1, aa) * dt / 2; //TF
+        } else {
+          t += dt - dty / 2; step = step + 1; M.time(step) = t; M(step, aa) = MISCMATHS::pow(-1.0f, (double) c + 1) * dty * tana / 2; kx = kx + (M(step - 1, aa) + M(step, aa)) * (dt - dty / 2) / 2;
+          t += dty / 2; step = step + 1; M.time(step) = t; M(step, bb) = phdir * Gy; ky = ky + dty * M(step, bb) / 4; kx = kx + M(step - 1, aa) * dty / 4; //TG
+        }
+      }
+      /////////////////Crushers
+      t += rt; step = step + 1; M.time(step) = t; M(step, aa) = maxG; M(step, bb) = maxG; M(step, cc) = maxG;
+      t += tcrush; step = step + 1; M.time(step) = t; M(step, aa) = maxG; M(step, bb) = maxG; M(step, cc) = maxG;
+      t += rt; step = step + 1; M.time(step) = t;
+      t = (double) (TRslc * b + (a - 1) * TR); step = step + 1; M.time(step) = t;
+    }
+    t = (double) (TR * a);
+    if (t - M.time(step) > 1e-06) {
+      step = step + 1; M.time(step) = t;
+    }
+    if (t - M.time(step) < -1e06) {
+      cout << "WARNING:TR is shorter than Nslc*TRslc" << endl;
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  if (opt_kcoord.value()) {
+    write_binary_matrix(coord, "kcoord_" + opt_pulse.value());
+  }
+
+  return M;
+}
+PMatrix spinecho(const int n, const RowVector zc, const int ns, const double ddz, const int slcdir_int, const int phasedir_int, const int readdir_int, const int resX, const int resY) {
+// Input parameters: n = number of volumes, ns = number of slices (per volume)
+//   ddz = slice thickness (m) , zc = coordinate of slice centre (m)
+  //EPISEQUENCE MATRIX INPUTFILE
+//(1)=time in s,(2)=rf angle,(3)=rf frequency bandwidth df(Hz),(4)=rf center frequency fc(Hz),(5)=readout 1/0 (6)=x gradient(T/m),(7)=y gradient(T/m),(8)=z gradient(T/m)
+/////////////////////////////////
+//SLICE DIRECTION
+////////////////////////////////
+  int aa = 6;
+  int bb = 7;
+  int cc = 8;
+//slc
+  if (abs(slcdir_int) == 1) cc = 8;
+  if (abs(slcdir_int) == 2) cc = 7;
+  if (abs(slcdir_int) == 3) cc = 6;
+//phase
+  if (abs(phasedir_int) == 1) bb = 8;
+  if (abs(phasedir_int) == 2) bb = 7;
+  if (abs(phasedir_int) == 3) bb = 6;
+//read
+  if (abs(readdir_int) == 1) aa = 8;
+  if (abs(readdir_int) == 2) aa = 7;
+  if (abs(readdir_int) == 3) aa = 6;
+
+  int bhelp = 0;
+  int simdir = 1;
+  int phdir = 1;
+  int redir = 1;
+  if (slcdir_int < 0) {
+    bhelp = ns + 1;
+    simdir = -1;
+  }
+  if (phasedir_int < 0) {
+    phdir = -1;
+  }
+  if (readdir_int < 0) {
+    redir = -1;
+  }
+
+/////////////////////////////
+//INPUT PARAMETERS
+////////////////////////////
+  float angle = opt_angle.value();
+  float angle_rad = angle * M_PI / 180;
+  float bw = opt_BWrec.value(); //BW
+  float TE = opt_TE.value();
+  float TR = opt_TR.value();
+  float rt = opt_risetime.value();
+  float maxG = opt_maxG.value();
+  float dx = opt_dx.value();
+  float dy = opt_dy.value();
+  double tana = maxG / rt;
+///////////////////////////
+//SLICE SELECTION
+///////////////////////////
+  double Gz = 7.128 * 1e-03; //z gradient during rf excitation (in T/m)
+  double dtz = 0.040731429 * 0.001;      //??
+  double rft = 4 * 0.001;            //??
+//tejas-changed -- 26.10.12
+//  OLD
+//  double dtz1=sqrt(Gz*(dtz+rft/2)/tana);
+//  double Gz1=dtz1*tana/2;
+
+//  NEW
+  double dtz11 = sqrt(((rft + dtz) * Gz) / (2 * tana));
+  double Gz1 = ((rft + dtz) * Gz) / (2 * dtz11);
+//  29.10.11: dtz11 is time for 0 to Gz1; dtz1 is the total time for the negative pulse
+  double dtz1 = dtz11 * 2;
+//tejas-end
+
+  double TA = rft / 2 + dtz + dtz1; //when all rf stuff ends
+  double df = ddz * gammabar * Gz; //frequency width (in m*Hz/T*T/m=Hz),
+//cout<<"frequency width     "<<df<<endl;
+  double t = 0; //time (in ms)
+//double offset=0;//for now (in m)
+  int step = 1; //row number in the matrix
+  RowVector fc = zc * gammabar * Gz;
+  cout << "Vector of centers of slices is (m) " << zc << endl;
+  cout << "Vector of corresponding frequences is (Hz) " << fc << endl; //vector of centers of frequences (Hz)
+///////////////////////////
+//READ OUT
+///////////////////////////
+  double dtx = 1 / bw; //sampling time along the readout direction
+  double dkx = 1 / (resX * dx); //dimensions of sampling distances in the k-space
+  double dky = 1 / (resY * dy);
+  double kx, ky; //for calculating the positions in the k-space by summing the areas.
+  double Gx = dkx / (gammabar * dtx); //coming from dtx*gammabar*Gx=dkx
+  double dt = Gx / tana;
+  double dty = sqrt(4 * dky / (gammabar * tana));
+//double Gy=dty*tana/2;
+  double dtx1 = sqrt(Gx * (dt + resX * dtx) * 2 / tana);
+  double Gx1 = dtx1 * tana / 2;
+  double TEl = dt + resX / 2 * dtx; //TE is on the (resX/2+1,resY/2+1)point in the k-space
+  double TEr = dt + (resX / 2 - 1) * dtx;
+  double dty1 = sqrt(resY / 2) * dty; //calculate dty1 and Gy1
+  double Gy1 = dty1 * tana / 2;
+  double TD = TE - TEl;
+  double TC = TD - dtx1;
+  double TB = TC - dty1;
+  double TF = TE + TEr;
+//Tejas changed -- mult: factor to change maxG
+  int mult = 1;
+  double tcrush = 100 * rt;
+//tejas end
+  double TG = TF + 2 * rt + tcrush; //100rt is how much is needed to make ggx ggy and ggz become 100 times larger which will reduce the signal 100 times -----  still in process of testing dec 20
+
+  double TH = TE/2; //Time the 180 RF pulse is applied
+  cout << "Times in the acquisition of one slice starting from the RF pulse (in s)" << endl;
+  cout << "the slice selection gradient is done TA=" << TA << endl;
+  cout << "the 180 RF pulse is applied =" << TH << endl;
+  cout << "the phase encode gradient starts dephasing TB=" << TB << endl;
+  cout << "the phase encode gradient stops dephasing, and the read-out gradient starts dephasing TC=" << TC << endl;
+  cout << "the read-out gradient stops dephasing,begining of the read-out period TD=" << TD << endl;
+  cout << "echo time TE=" << TE << endl;
+  cout << "end of the read-out period and begining of the crushers TF=" << TF << endl;
+  cout << "end of the crushers TG=" << TG << endl;
+  cout << "end of the acquisition of one line=" << TR << endl;
+
+  if (TD < 0 || TB < 0 || TA < 0 || TC < 0 || TF > TR || TG > TR) {
+    cout << "WARNING:TE is not long enough to accomodate for the resX, resY, and the BW" << endl;
+    exit(EXIT_FAILURE);
+  }
+  if (TH < TA || TH > TB || TH > TC || TH > TD ) {
+    cout << "WARNING: TE is not long enough to accomodate the 180 RF pulse" << endl;
+    exit(EXIT_FAILURE);
+  }
+  double TRF = 0.0;
+////////////////////////////
+//FIRST LOOP TO CALCULATE DIMENSION
+///////////////////////////
+  for (int a = 1; a <= n; a++) {
+    for (int b = 1; b <= ns; b++) {
+      for (int c = 1; c <= resY; c++) {
+        t = t + dtz; step = step + 1;
+        t = t + rft / 2; step = step + 1;
+
+        t = t + rft / 2; step = step + 1;
+        t = t + dtz; step = step + 1;
+        t = t + dtz1 / 2; step = step + 1;
+        t = t + dtz1 / 2; step = step + 1;
+        ////////////////dephase
+        t = TRF + TB; step = step + 1;
+        t = t + dty1 / 2; step = step + 1;
+        t = t + dty1 / 2; step = step + 1;
+        t = t + dtx1 / 2; step = step + 1;
+        t = t + dtx1 / 2; step = step + 1;
+
+        step = step + 4; //Extra steps for spin-echo
+        ////////////////readout
+        t = t + dt; step = step + 1;
+
+        for (int d = 1; d <= resX - 1; d++) {
+          t = t + dtx; step = step + 1;
+        }
+        t = t + dt; step = step + 1;
+        /////////////////Crushers
+        t += rt; step = step + 1;
+        t += tcrush; step = step + 1;
+        t += rt; step = step + 1;
+        t = TR * c + TR * resY * (b - 1) + TR * (a - 1); step = step + 1;
+      }
+//tejas-edit
+      /** edit: TRslice=TR*resY; TR(whole vol)=TR*resY*ns     **/
+      t = TR * resY * b + TR * resY * ns * (a - 1); step = step + 1;
+      //t=TR*resY*b+TR*(a-1);step=step+1;
+    }
+    /** edit: TRslice=TR*resY; TR(whole vol)=TR*resY*ns     **/
+    t = TR * resY * ns * a; step = step + 1;
+// t=TR*a;step=step+1;
+//tejas-end
+  }
+
+////////////////////////////
+//MAIN LOOP
+///////////////////////////
+  int nreadp = n * ns * resX * resY;
+  int readstep = 0;
+  PMatrix M(step, 8); //main matrix:
+  M = 0.0;
+  step = 1; t = 0;
+  Matrix coord(2, nreadp); //matrix for the kspace coordinates, 1st raw for kx and 2nd for ky
+
+  for (int a = 1; a <= n; a++) {
+    for (int b = 1; b <= ns; b++) {
+      for (int c = 1; c <= resY; c++) {
+        kx = 0; ky = 0;
+        ////////////////////////////////////////
+        //making matrix to save the coordinates
+        ////////////////////////////////////////
+        ////////////////slice selection //have to work more on this, quite primitive at the moment
+
+        t = t + dtz; step = step + 1; M.time(step) = t; M(step, cc) = Gz;
+        t = t + rft / 2; step = step + 1; M.time(step) = t; M(step, 2) = angle_rad; M(step, 3) = df; M(step, 4) = fc(bhelp + simdir * b); M(step, cc) = Gz; //TRF
+        TRF = t;
+        //  cout<<"STEP="<<step<<" The time when the RF pulse happenes for the VolNum "<<a<<" and the SlcNum "<<b<<" is linenumber="<<c<<endl;
+        t = t + rft / 2; step = step + 1; M.time(step) = t; M(step, cc) = Gz;
+        t = t + dtz; step = step + 1; M.time(step) = t;
+
+        t = t + dtz1 / 2; step = step + 1; M.time(step) = t; M(step, cc) = -Gz1;
+        t = t + dtz1 / 2; step = step + 1; M.time(step) = t; //TA
+        
+        //Apply 180 pulse
+        t = (TRF+TH +rft/2); step = step + 1; M.time(step) = t;
+        t += dtz; step = step + 1; M.time(step) = t; M(step, 2) = 2*angle_rad; M(step, 3) = df; M(step, 4) = fc(bhelp + simdir * b); M(step, cc) = Gz; //kz=kz+M(step,cc)*rft/2;//TRF
+        t += dtz; step = step + 1; M.time(step) = t; M(step, cc) = -Gz;
+        t += dtz; step = step + 1; M.time(step) = t;
+
+        ////////////////dephase
+        dty1 = sqrt(fabs(((float)(resY)) / 2 - c + 1)) * dty; //calculate dty1 and Gy1
+        Gy1 = sign(resY / 2 - c + 1) * dty1 * tana / 2;
+        TB = TC - dty1;
+        t = TRF + TB; step = step + 1; M.time(step) = t; //TB
+        t = t + dty1 / 2; step = step + 1; M.time(step) = t; M(step, bb) = -phdir * Gy1; ky = ky + M(step, bb) * dty1 / 4;
+        t = t + dty1 / 2; step = step + 1; M.time(step) = t;  ky = ky + M(step - 1, bb) * dty1 / 4; //TC
+        t = t + dtx1 / 2; step = step + 1; M.time(step) = t; M(step, aa) = -redir * Gx1; kx = kx + M(step, aa) * dtx1 / 4;
+        t = t + dtx1 / 2; step = step + 1; M.time(step) = t; kx = kx + M(step - 1, aa) * dtx1 / 4; //TD
+        ////////////////readout
+        t = t + dt; step = step + 1; M.time(step) = t; M(step, 5) = 1; M(step, aa) = redir * Gx; kx = kx + redir * Gx * dt / 2; readstep = readstep + 1;
+        //cout<<"The first point in the k-space for the VolNum "<<a<<" and the SlcNum "<<b<<" is (kx,ky)="<<"("<<kx*gammabar<<","<<ky*gammabar<<")"<<endl;
+        coord(1, readstep) = kx * gammabar;
+        coord(2, readstep) = ky * gammabar;
+        for (int d = 1; d <= resX - 1; d++) {
+          t = t + dtx; step = step + 1; M.time(step) = t; M(step, 5) = 1; M(step, aa) = redir * Gx; kx = kx + M(step, aa) * dtx; readstep = readstep + 1;
+          /*
+          if (c==1)cout<<" is (kx,ky)="<<"("<<kx*gammabar<<","<<ky*gammabar<<")"<<endl;
+              if (d==1)cout<<" is (kx,ky)="<<"("<<kx*gammabar<<","<<ky*gammabar<<")"<<endl;
+              if (c==(resY/2+1) && d==(resX/2))cout<<"The center of the k-space for the VolNum "<<a<<" and the SlcNum "<<b<<" is (kx,ky)="<<"("<<kx*gammabar<<","<<ky*gammabar<<")"<<endl; //TE
+          */
+          coord(1, readstep) = kx * gammabar;
+          coord(2, readstep) = ky * gammabar;
+        }
+        t = t + dt; step = step + 1; M.time(step) = t; kx = kx + redir * Gx * dt / 2; //TF
+        /////////////////Crushers
+        //tejas changed -added 'mult'
+        t += rt; step = step + 1; M.time(step) = t; M(step, aa) = maxG * mult; M(step, bb) = maxG * mult; M(step, cc) = maxG * mult;
+        t += tcrush; step = step + 1; M.time(step) = t; M(step, aa) = maxG * mult; M(step, bb) = maxG * mult; M(step, cc) = maxG * mult;
+        t += rt; step = step + 1; M.time(step) = t;
+        //edit: TRslice=TR*resY; TR(whole vol)=TR*resY*ns
+        t = TR * c + TR * resY * (b - 1) + TR * resY * ns * (a - 1); step = step + 1; M.time(step) = t;
+      }
+      //edit: TRslice=TR*resY; TR(whole vol)=TR*resY*ns
+      t = TR * resY * b + TR * resY * ns * (a - 1); step = step + 1; M.time(step) = t;
+//      cout<<M(step,1)<<"\t"<<M(step,2)<<"\t"<<M(step,3)<<"\t"<<M(step,4)<<"\t"<<M(step,5)<<"\t"<<M(step,6)<<"\t"<<M(step,7)<<"\t"<<M(step,8)<<endl;
+    }
+    //edit: TRslice=TR*resY; TR(whole vol)=TR*resY*ns
+    t = TR * resY * ns * a; step = step + 1; M.time(step) = t;
+    //tejas end
+  }
+//write_binary_matrix(M,"PMatrix_value");
+
+  if (opt_kcoord.value()) {
+    write_binary_matrix(coord, "kcoord_" + opt_pulse.value() );
+  }
+
+  return M;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
