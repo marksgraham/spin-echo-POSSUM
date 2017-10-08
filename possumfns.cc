@@ -1239,8 +1239,13 @@ void voxel1(const double x,const double y,double z,
 	int readstep = 0;		//keeps track of readout points
 	int excitation = 0;
 	double trf = 0;			//rftime
-	double T2 = tissue(2);
-	double iT2 = 1/T2;
+  double trf90 =0;        //time since last 90 rf
+  double RFdist = 0; //time between 90 and 180 pulse
+  double T2 = tissue(5);
+  double T2star = tissue(2);
+  double iT2 = 1 / T2;
+  double iT2star = 1 / T2star;
+  double iT2prime = iT2star - iT2;
 	int rftest = 0;
 	double g1,g2,g3,grf1,grf2,grf3; 
 	g1=0.0; g2=0.0; g3=0.0; grf1=0.0; grf2=0.0; grf3=0.0;
@@ -1324,7 +1329,10 @@ void voxel1(const double x,const double y,double z,
 		double gg2 = g2 - grf2;
 		double gg3 = g3 - grf3;
 
-		double tt = tnew - trf;//time since the last rf pulse
+    double tt = tnew - trf90; //time since last 90 pulse
+    double ttt = tnew - trf; //time since the last rf pulse
+    double epsilon = abs(ttt-RFdist); //RFdist is time between the 90 and 180 pulse (0 if no 180 pulse). Before the 180 pulse, epsilon measures the time since the 90 pulse. After the 180, epsilon measures how close we are to TE - at TE, epslon is 0.
+    double epsilon2 = -2* RFdist + tt; //measures the time since the 90 pulse, with a 'flip' at a 180 pulse to help keep track of the phase
 		cout.precision(20);
 
 //		if (v==1 && readstep%4096==1 && opt_test==1)cout<<"tnew "<<tnew<<";told "<<told<<";trf "<<trf<<";tt=tnew-trf "<<tt<<";tnew-told "<<tnew-told<<endl; 
@@ -1333,8 +1341,8 @@ void voxel1(const double x,const double y,double z,
 		if( told >= timecourse[actstep] && actstep <= (Nact-2) )
 		{
 			coeff(activation[actstep],activation[actstep+1],timecourse[actstep],timecourse[actstep+1],dT2_1,dT2_2);
-			dT2_1 = dT2_1*iT2*iT2;
-			dT2_2 = dT2_2*iT2*iT2;
+      dT2_1 = dT2_1 * iT2star * iT2star;
+      dT2_2 = dT2_2 * iT2star * iT2star;
 			actstep = actstep+1;
         }
 		actint += (dT2_1+dT2_2*(tnew + told)/2)*(tnew - told);
@@ -1342,7 +1350,7 @@ void voxel1(const double x,const double y,double z,
 //		else actint+=log(1+(tnew-told)/(told+dT2_1/dT2_2))/dT2_2
 	
 //		double phase = 0;
-		double phase = gama*gg1*x + gama*gg2*y + gama*gg3*z+gama*b0*tt + gama*chshift*tt; 
+		double phase = gama*gg1*x + gama*gg2*y + gama*gg3*z+gama*b0*epsilon2 + gama*chshift*epsilon2; //here tt has been replace with epsilon2 
 
 		if (rfangle != 0)
 		{
@@ -1364,6 +1372,13 @@ void voxel1(const double x,const double y,double z,
 				double ts = table_slcprof[nf];
 				double sx = (table_slcprof[nf+1]-ts)*off + ts;
 				double rfangle_f = sx*rfangle*RFtrans;//RFtrans are values 0 to 1 to derscribe the inhomogeneity f the receive RF field. 1 is for perfectly homog;
+
+
+        //If the pulse was a 180 and this voxel is excited, set the flip angle to 180 to prevent it being treated as an excitation pulse later on. 
+        if (rfangle > 3.14 && rfangle_f > 0) {
+          rfangle_f = 3.1416;
+        }
+
 				if (opt_test==1 && readstep%4096==0 && v==1)
 				{
 					cout<<"table_slcprof[nf]= "<<table_slcprof[nf]<<"; rfangle= "<<rfangle<<"; RFtrans= "<<RFtrans<<endl;
@@ -1377,29 +1392,33 @@ void voxel1(const double x,const double y,double z,
 					m = free(m,tt,tissue,phase,actint);
 //new stuff mon dec 19
 //due to crushers or any gradient induced dephasing over the voxel a new initial magnetisation is introduced which is the average of the magnetisations over the voxel  
+          if (rfangle_f > 0 && rfangle_f < 3.14)  {
+  					double xvalrf = fabs(glo_cx*(gg1 + b0x*tt));
+  					double yvalrf = fabs(glo_cy*(gg2 + b0y*tt));
+  					double zvalrf = fabs(glo_cz*(gg3 + b0z*tt));
+  					double xyzrf = Sinc(xvalrf)*Sinc(yvalrf)*Sinc(zvalrf);
 
-					double xvalrf = fabs(glo_cx*(gg1 + b0x*tt));
-					double yvalrf = fabs(glo_cy*(gg2 + b0y*tt));
-					double zvalrf = fabs(glo_cz*(gg3 + b0z*tt));
-					double xyzrf = Sinc(xvalrf)*Sinc(yvalrf)*Sinc(zvalrf);
+  					m(1) = m(1)*xyzrf;
+  					m(2) = m(2)*xyzrf;
+  					m = rot(rfangle_f,"x")*m;
+  					//new stuff
+  					m00 = sqrt( m(1)*m(1)+m(2)*m(2) );
 
-					m(1) = m(1)*xyzrf;
-					m(2) = m(2)*xyzrf;
-					m = rot(rfangle_f,"x")*m;
-					//new stuff
-					m00 = sqrt( m(1)*m(1)+m(2)*m(2) );
+  					if (opt_test==1 && readstep%4096==0 && v==1 )	cout<<"Projection of the magnetisation vector into the xy plane after flipping is "<<m00<<endl;
 
-					if (opt_test==1 && readstep%4096==0 && v==1 )	cout<<"Projection of the magnetisation vector into the xy plane after flipping is "<<m00<<endl;
-
-					trf = tnew;
-					grf1 = g1;
-					grf2 = g2;
-					grf3 = g3;
+  					trf90 = tnew; //set ime since last 90 degree pulse
+  					grf1 = g1;
+  					grf2 = g2;
+  					grf3 = g3;
 
 
-					actint = 0.0;
-					rftest = 1;
-
+  					actint = 0.0;
+  					rftest = 1;
+            }
+            if (rfangle_f > 3.14) {
+             RFdist = tt; //set time between 90 and 180 pulses
+            }   
+            trf = tnew; //set time since last RF pulse
                 } //new stuff
             }
         }
@@ -1411,14 +1430,14 @@ void voxel1(const double x,const double y,double z,
 			{
 //				phase = gama*gg1*x + gama*gg2*y + gama*gg3*z+gama*b0*tt + gama*chshift*tt; 
 
-				double xval = fabs(glo_cx*(gg1 + b0x*tt));
-				double yval = fabs(glo_cy*(gg2 + b0y*tt));
-				double zval = fabs(glo_cz*(gg3 + b0z*tt));
+				double xval = fabs(glo_cx*(gg1 + b0x*epsilon));
+				double yval = fabs(glo_cy*(gg2 + b0y*epsilon));
+				double zval = fabs(glo_cz*(gg3 + b0z*epsilon));
 				if (save_kcoord<0 || save_kcoord==v)
 				{
-					coord(1,readstep) = gammabar*(gg1 + b0x*tt);//to record the distorted coordinatres in the k-space
-					coord(2,readstep) = gammabar*(gg2 + b0y*tt);
-					coord(3,readstep) = gammabar*(gg3 + b0z*tt);
+					coord(1,readstep) = gammabar*(gg1 + b0x*epsilon);//to record the distorted coordinatres in the k-space
+					coord(2,readstep) = gammabar*(gg2 + b0y*epsilon);
+					coord(3,readstep) = gammabar*(gg3 + b0z*epsilon);
                     if (save_kcoord<0){
                         save_kcoord=v;
                         cout<<"Voxel for kcoord save="<<v<<endl;
@@ -1429,7 +1448,7 @@ void voxel1(const double x,const double y,double z,
 	#ifdef NOTABLE
 				if (v==1 && readstep==1)	cout<<"No table sinc calc"<<endl;
 
-				tmp=m00*exp(-tt*iT2+actint)*Sinc(xval)*Sinc(yval)*Sinc(zval);
+				tmp = m00 * exp(-tt*iT2) * exp(-epsilon * iT2prime + actint) * Sinc(xval) * Sinc(yval) * Sinc(zval); //now use epsilon to calculate the T2' attenuation. If no 180 pulse, epsilon = tt, if there has been a 180 then epsilon will = 0 at TE.
 
 				sreal[readstep-1] += den*tmp*cos(phase);
 				simag[readstep-1] += den*tmp*sin(phase);
@@ -1458,7 +1477,7 @@ void voxel1(const double x,const double y,double z,
 					ts = table_sinc[nbin];
 					double sz = (table_sinc[nbin+1]-ts)*off + ts;
 				//CALCULATING TMP
-					tmp = m00*exp(-tt*iT2+actint)*sx*sy*sz;
+					tmp = m00 * exp(-tt*iT2) * exp(-epsilon * iT2prime + actint)  * sx * sy * sz;
 				//TESTING 
 					if (opt_test==1 && v==1 && readstep%4096==2081)
 					{
@@ -1469,7 +1488,7 @@ void voxel1(const double x,const double y,double z,
                 }
 				else
 				{
-					tmp = m00*exp(-tt*iT2+actint)*Sinc(xval)*Sinc(yval)*Sinc(zval);
+					tmp = m00 * exp(-tt*iT2) * exp(-epsilon * iT2prime + actint)  * Sinc(xval) * Sinc(yval) * Sinc(zval);
                 }
 				//TABLES SIN AND COS CALCULATION
 
