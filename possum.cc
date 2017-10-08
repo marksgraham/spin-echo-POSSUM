@@ -252,9 +252,9 @@ cout << "possum-start-time\t"<< opt_procid.value() << "\t" << theTime << endl;
   print_volume_info(phantom,"object");
   cout<<""<<endl;
   cout<<"Reading the tissue properties..."<<endl;
-  Matrix tissue;  //tissue caracteristics   T1,T2,PD,ChemicalShift=value(ppm)*gammabar*B0
+  Matrix tissue;  //tissue caracteristics   T1,T2*,PD,ChemicalShift=value(ppm)*gammabar*B0,T2
   tissue=read_ascii_matrix(opt_tissue.value());//in SI already
-  cout<<"T1,T2,SD,CS: "<<endl;
+  cout<<"T1,T2*,SD,CS,T2: "<<endl;
   cout<<tissue<<endl;
   ///////////////////////////////////////////////////////
   //PULSE & MOTION MATRIX SORT IN MAINMATRIX
@@ -298,6 +298,12 @@ cout << "possum-start-time\t"<< opt_procid.value() << "\t" << theTime << endl;
   int resY=(int) (pulseinfo(6));
   int kspacestart=(int) (pulseinfo(22));
   int nrf=numslc*numvol;//number of rf pulses 
+  if (pulseinfo(1) == 3 || pulseinfo(1) == 4) {
+    nrf = nrf *2; //Adjust nrf for spin-echo case
+  }
+  if (pulseinfo(1) == 2 || pulseinfo(1) == 4) {
+    nrf = nrf *resY; //Adjust nrf for line-by-line readouts
+  }
   int motionsize=motion.Nrows();
   double tzmax, tzmin, txmax, txmin, tymax,tymin, rxmaxabs, rymaxabs, rzmaxabs; 
   tzmax=0;tzmin=0; txmax=0;txmin=0; tymax=0; tymin=0; rxmaxabs=0;  rymaxabs=0; rzmaxabs=0;
