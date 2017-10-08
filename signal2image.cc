@@ -299,15 +299,24 @@ int ReshapeEpiSignal(const Matrix& signal,
                  xdir1=slchelp+simdir*(nzz-1);
                  xdir2=slchelp+simdir*(nzz-1);
 	       }
-               if (phasedir==1) {
+               if (abs(phasedir)==1) {
                  zdir1=(nphase-1)-(k-1);
 		 zdir2=(nphase-1)-(k-2);
 	       }
-               if (phasedir==2) {
+         
+               if (abs(phasedir)==2) {
+                //QUICK FIX to allow correct reconstruction of reversed phase-encoding images. This needs to be applied to all the other options (e.g., phasedir==1)
+                if (sign(phasedir) < 0) {
+                  int kprime = nphase_new-k+1;
+                  ydir1=(nphase-1)-(kprime-2);
+                 ydir2=(nphase-1)-(kprime-1);
+                }
+                else {
                  ydir1=(nphase-1)-(k-1);
-		 ydir2=(nphase-1)-(k-2);
-	       }
-               if (phasedir==3) {
+                 ydir2=(nphase-1)-(k-2);
+               }
+         }
+               if (abs(phasedir)==3) {
                  xdir1=(nphase-1)-(k-1);
 		 xdir2=(nphase-1)-(k-2);
 	       }
@@ -425,7 +434,7 @@ int do_work(int argc, char* argv[])
   double dphase=pulseinfo(8)*1e03;//phase
   int nread=(int) (pulseinfo(5));
   int nphase=(int) (pulseinfo(6));
-  int seqnum=(int) (pulseinfo(1));//2 for ge 1 for epi and 0 for none
+  int seqnum=(int) (pulseinfo(1));//4 for se, 3 for se-epi, 2 for ge, 1 for epi and 0 for none
   int slcdir=(int) pulseinfo(15);//1 for z, 2 for y and 3 for x
   int phasedir=(int) pulseinfo(19);
   int readdir=(int) pulseinfo(20);
@@ -495,8 +504,8 @@ int do_work(int argc, char* argv[])
     kcoord_ky.settdim(dt);
     Matrix kcoord;
     kcoord=read_binary_matrix(opt_kcoord.value());
-    if (seqnum==1) ReshapeEpiSignal(kcoord,slcdir,nslc,phasedir,nphase,readdir,nread,startkspace,kcoord_kx,kcoord_ky);
-    else if (seqnum==2) ReshapeGradEchoSignal(kcoord,slcdir,nslc,phasedir,nphase,readdir,nread,kcoord_kx,kcoord_ky);
+    if (seqnum==1 || seqnum==3) ReshapeEpiSignal(kcoord,slcdir,nslc,phasedir,nphase,readdir,nread,startkspace,kcoord_kx,kcoord_ky);
+    else if (seqnum==2 || seqnum==4) ReshapeGradEchoSignal(kcoord,slcdir,nslc,phasedir,nphase,readdir,nread,kcoord_kx,kcoord_ky);
     else cout<<"Do not know the sequence number "<<seqnum<<endl;
     save_volume4D(kcoord_kx,opt_kcoord.value()+"_kx");
     save_volume4D(kcoord_ky,opt_kcoord.value()+"_ky");
@@ -525,8 +534,8 @@ int do_work(int argc, char* argv[])
     kspace_imag.setydim(dy);
     kspace_imag.setzdim(dz);
     kspace_imag.settdim(dt);
-    if (seqnum==1) ReshapeEpiSignal(signal,slcdir,nslc,phasedir,nphase,readdir,nread,startkspace,kspace_real,kspace_imag);
-    else if (seqnum==2) ReshapeGradEchoSignal(signal,slcdir,nslc,phasedir,nphase,readdir,nread,kspace_real,kspace_imag);
+    if (seqnum==1 || seqnum==3) ReshapeEpiSignal(signal,slcdir,nslc,phasedir,nphase,readdir,nread,startkspace,kspace_real,kspace_imag);
+    else if (seqnum==2 || seqnum==4) ReshapeGradEchoSignal(signal,slcdir,nslc,phasedir,nphase,readdir,nread,kspace_real,kspace_imag);
     else cout<<"Do not know the sequence"<<endl;
 
     if (koutname.set()) {
