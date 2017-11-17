@@ -1995,7 +1995,7 @@ void voxel3(const double x,const double y,const double z,
   //////////////////////////////////////////////////////////////////////////
   //READING IN THE SAVED STATE
   ///////////////////////////////////////////////////////////////////////// 
-  int npst=16;
+  int npst=23;
   static vector< vector<double> > pstate(nonzero, vector<double>(npst,0.0));
   if (segA==1){
     pstate[v-1][2]=tissue(3);
@@ -2017,6 +2017,14 @@ void voxel3(const double x,const double y,const double z,
   double actint=pstate[v-1][13];
   int actstep=(int)pstate[v-1][14];
   double m00=pstate[v-1][15];
+  //These extra variables are for the spin echo:
+  double trf90 = pstate[v - 1][16]; //time since last 90 tf
+  double RFdist = pstate[v - 1][17];//time between 90 and 180 
+  int RF180 = pstate[v - 1][18]; //boolean - does this step have a 180 pulse?
+  double b0susrf180 = pstate[v - 1][19];  //value of b0 at the 180 pulse
+  double b0xsusrf180 = pstate[v - 1][20]; //value of b0x at the 180 pulse
+  double b0ysusrf180 = pstate[v - 1][21];
+  double b0zsusrf180 = pstate[v - 1][22];
   //for V=1 
   int npste=13;
   static vector<double> pstatev(npste,0.0);
@@ -2047,8 +2055,11 @@ void voxel3(const double x,const double y,const double z,
   ////////////////////////////////////////////////////////////////////////
   double chshift=tissue(4);//chemical shift
   int numpoints=H.Nrows();//number of timepoints in the eventsequencer matrix
-  double T2=tissue(2);
-  double iT2=1/T2;
+  double T2 = tissue(5);
+  double T2star = tissue(2);
+  double iT2 = 1 / T2;
+  double iT2star = 1 / T2star;
+  double iT2prime = iT2star - iT2;
   double g1,g2,g3,g4;
   double rr1,rr2,rr3,trr;
   Matrix coord(3,nreadp);
@@ -2289,7 +2300,9 @@ void voxel3(const double x,const double y,const double z,
       cout<<"g3="<<g3<<"; grf3="<<grf3<<"; gg3="<<gg3<<endl;
       cout<<"g4="<<g4<<"; grf4="<<grf4<<"; gg4="<<gg4<<endl;
     }
-    tt=tnew-trf;
+    tt = tnew - trf90; //time since last 90 pulse
+    double ttt = tnew - trf; //time since the last rf pulse
+    double epsilon = abs(ttt-RFdist);
     if (told>=timecourse[actstep] && actstep<=(Nact-2)){
 	coeff(activation[actstep],activation[actstep+1],timecourse[actstep],
 	      timecourse[actstep+1],dT2_1,dT2_2);
@@ -2312,12 +2325,22 @@ void voxel3(const double x,const double y,const double z,
       by22+b0tmp23*by23+b0tmp31*by31+b0tmp32*by32+b0tmp33*by33;
     b0zsus= b0tmp11*bz11+b0tmp12*bz12+b0tmp13*bz13+b0tmp21*bz21+b0tmp22*
       bz22+b0tmp23*bz23+b0tmp31*bz31+b0tmp32*bz32+b0tmp33*bz33;
-    b00=b0sus-b0susrf;
-    b0x=b0xsus-b0xsusrf;
-    b0y=b0ysus-b0ysusrf;
-    b0z=b0zsus-b0zsusrf;
+
+    //Record these values at the moment the 180 happens
+    if (RF180 == 1) {
+     b0susrf180 = b0sus - b0susrf;
+     b0xsusrf180 = b0xsus - b0xsusrf;
+     b0ysusrf180 = b0ysus - b0ysusrf;
+     b0zsusrf180 = b0zsus - b0zsusrf;
+     RF180 = 0;
+    }
+    //If there has been a 180 pulse the phase that has accumulated since the 90 is subtracted 
+    b00 = b0sus   - b0susrf  - 2*b0susrf180;
+    b0x = b0xsus - b0xsusrf - 2*b0xsusrf180;
+    b0y = b0ysus - b0ysusrf - 2*b0ysusrf180;
+    b0z = b0zsus - b0zsusrf - 2*b0zsusrf180;
     //b0 ends
-    double phase=gama*(gg1*x+gg2*y+gg3*z+gg4+b00+chshift*tt);
+    double phase=gama*(gg1*x+gg2*y+gg3*z+gg4+b00+chshift*epsilon);
     if (fabs(rfangle)>1e-06){
       excitation=0;
       double df=H(step,3);//frequency width
@@ -2407,32 +2430,45 @@ void voxel3(const double x,const double y,const double z,
 	}
         //cout<<"prfweight = "<<prfweight<<endl;
         double rfangle_f=prfweight*rfangle*RFtrans;//RFtrans are values 0 to 1 to derscribe 
+        //Make sure a 180 pulse has the correct value here so it is handled correctly later in the code
+        if (rfangle > 3.14 && rfangle_f > 0) {
+          rfangle_f = 3.1416;
+        }        
         if (fabs(rfangle_f)>1e-06){//new stuff mon dec 19
           excitation=1;
           m=free(m,tt,tissue,phase,actint);
+          //if the angle is less than 3.14 treat it as an excitation
+          if (rfangle_f > 1e-6 && rfangle_f < 3.14) {
 	  //new stuff mon dec 19
 	  //due to crushers or any gradient induced dephasing over the voxel a new 
 	  //initial magnetisation is introduced which is the average of the 
 	  //magnetisations over the voxel  
-          double xvalrf=fabs(glo_cx*(gg1+b0x*tt));
-          double yvalrf=fabs(glo_cy*(gg2+b0y*tt));
-          double zvalrf=fabs(glo_cz*(gg3+b0z*tt));
+          double xvalrf=fabs(glo_cx*(gg1+b0x));
+          double yvalrf=fabs(glo_cy*(gg2+b0y));
+          double zvalrf=fabs(glo_cz*(gg3+b0z));
 	  double xyzrf=Sinc(xvalrf)*Sinc(yvalrf)*Sinc(zvalrf);
 	  m(1)=m(1)*xyzrf;
           m(2)=m(2)*xyzrf;
           m=rot(rfangle_f,"x")*m;
           //new stuff
           m00=sqrt(m(1)*m(1)+m(2)*m(2));
-          trf=tnew;
+          trf90=tnew;
           grf1=g1;
           grf2=g2;
           grf3=g3;
-	      grf4=g4;
+	        grf4=g4;
           b0susrf=b0sus;
 	      b0xsusrf=b0xsus;
 	      b0ysusrf=b0ysus;
 	      b0zsusrf=b0zsus;
 	      actint=0.0;
+      }
+      //If the angle is > 3.14 treat it as a spin-echo
+      if (rfangle_f > 3.14) {
+          RF180 =1; //Increment so that b0 inhomogeneities can be reversed
+          RFdist = tt;
+        }
+        trf = tnew;
 	  //}
 	}//new stuff
        }
@@ -2455,7 +2491,7 @@ void voxel3(const double x,const double y,const double z,
         }
 	double tmp;
 #ifdef NOTABLE
-        tmp=m00*exp(-tt*iT2+actint)*Sinc(xval)*Sinc(yval)*Sinc(zval);
+        tmp = m00 * exp(-tt*iT2) * exp(-epsilon * iT2prime + actint) * Sinc(xval) * Sinc(yval) * Sinc(zval);
         sreal[readstep-1]+=den*tmp*cos(phase);
         simag[readstep-1]+=den*tmp*sin(phase);
 #else
@@ -2481,11 +2517,11 @@ void voxel3(const double x,const double y,const double z,
 	ts=table_sinc[nbin];
 	double sz=(table_sinc[nbin+1]-ts)*off + ts;
 	//
-        tmp=m00*exp(-tt*iT2+actint)*sx*sy*sz;
+        tmp = m00 * exp(-tt*iT2) * exp(-epsilon * iT2prime + actint)  * sx * sy * sz;
 
       }
       else {
-        tmp=m00*exp(-tt*iT2+actint)*Sinc(xval)*Sinc(yval)*Sinc(zval);
+        tmp = m00 * exp(-tt*iT2) * exp(-epsilon * iT2prime + actint)  * Sinc(xval) * Sinc(yval) * Sinc(zval);
       }
       //TABLES SIN AND COS CALCULATION
       double phase_2pi;
@@ -2568,6 +2604,13 @@ void voxel3(const double x,const double y,const double z,
   pstate[v-1][13]=actint;
   pstate[v-1][14]=(double)actstep;
   pstate[v-1][15]=m00;
+  pstate[v - 1][16] = trf90;
+  pstate[v - 1][17] = RFdist;
+  pstate[v - 1][18] = RF180;
+  pstate[v - 1][19] = b0susrf180;
+  pstate[v - 1][20] = b0xsusrf180;
+  pstate[v - 1][21] = b0ysusrf180;
+  pstate[v - 1][22] = b0zsusrf180;
   //FOR V=1
   if (v==nonzero){
     pstatev[0]=(int)readstep;
