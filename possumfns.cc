@@ -1854,13 +1854,13 @@ void voxel2(const double x,const double y,const double z,
     if (read!=0){
       readstep=readstep+1;
       if (excitation==1 || nospeedup==1){
-        double xval=fabs(glo_cx*(gg1+b0x*tt));
-        double yval=fabs(glo_cy*(gg2+b0y*tt));
-        double zval=fabs(glo_cz*(gg3+b0z*tt));
+        double xval=fabs(glo_cx*(gg1+b0x*epsilon));
+        double yval=fabs(glo_cy*(gg2+b0y*epsilon));
+        double zval=fabs(glo_cz*(gg3+b0z*epsilon));
         if (save_kcoord<0 || save_kcoord==v){
-          coord(1,readstep)=gammabar*(gg1+b0x*tt);//to record the distorted coordinatres in the k-space
-          coord(2,readstep)=gammabar*(gg2+b0y*tt);
-          coord(3,readstep)=gammabar*(gg3+b0z*tt);
+          coord(1,readstep)=gammabar*(gg1+b0x*epsilon);//to record the distorted coordinatres in the k-space
+          coord(2,readstep)=gammabar*(gg2+b0y*epsilon);
+          coord(3,readstep)=gammabar*(gg3+b0z*epsilon);
             if (save_kcoord<0){
                 save_kcoord=v;
                 cout<<"Voxel for kcoord save="<<v<<endl;
