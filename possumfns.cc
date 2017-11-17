@@ -2673,9 +2673,14 @@ void voxel4(const double x,const double y,double z,
   int numpoints=H.Nrows();//number of timepoints in the eventsequencer matrix
   int readstep=0;//keeps track of readout points
   int excitation=0;
-  double trf=0;//rftime
-  double T2=tissue(2);
-  double iT2=1/T2;
+  double trf = 0;      //time since last rf
+  double trf90 =0;     //time since last 90 rf
+  double RFdist = 0;   //time between 90 and 180 pulse
+  double T2 = tissue(5);
+  double T2star = tissue(2);
+  double iT2 = 1 / T2;
+  double iT2star = 1 / T2star;
+  double iT2prime = iT2star - iT2;
   int rftest=0;
   double g1,g2,g3,grf1,grf2,grf3; 
   g1=0.0; g2=0.0; g3=0.0; grf1=0.0; grf2=0.0; grf3=0.0;
@@ -2730,6 +2735,8 @@ void voxel4(const double x,const double y,double z,
   double db0z_1=0.0;
   double db0z_2=0.0;
   double b0val=0.0;
+  //Extra variable for spin-echo
+  int rf180 = 0;
   ///////////////////////////////////////////////////////////////////////////
   //SIGNAL
   /////////////////////////////////////////////////////////////////////////// 
@@ -2764,7 +2771,11 @@ void voxel4(const double x,const double y,double z,
     double gg1=g1-grf1;
     double gg2=g2-grf2;
     double gg3=g3-grf3;
-    double tt=tnew-trf;//time since the last rf pulse
+    double tt=tnew-trf90;//time since the last rf pulse
+    double ttt = tnew - trf; //time since the last rf pulse
+    double epsilon = abs(ttt-RFdist);
+    double epsilon2 = -2*RFdist + tt;
+    
     cout.precision(20);
     //if (v==1 && readstep%4096==1 && opt_test==1)cout<<"tnew "<<tnew<<";told "<<told<<";trf "<<trf<<";tt=tnew-trf "<<tt<<";tnew-told "<<tnew-told<<endl; 
     //if (v==1 && readstep%4096==1 && opt_test==1)cout<<"g1 "<<g1<<";grf1 "<<grf1<<";gg1 "<<gg1<<endl;
@@ -2794,7 +2805,17 @@ void voxel4(const double x,const double y,double z,
     b0xint+=(db0x_1+db0x_2*(tnew+told)/2)*(tnew-told);
     b0yint+=(db0y_1+db0y_2*(tnew+told)/2)*(tnew-told);
     b0zint+=(db0z_1+db0z_2*(tnew+told)/2)*(tnew-told);
-    double phase=gama*(gg1*x+gg2*y+gg3*z+b0int+chshift*tt+b0*tt); 
+
+    //reverse bo contributions to phase at RF pulse
+    if (rf180 == 1) {
+      b0int = -b0int;
+      b0xint = -b0xint;
+      b0yint = -b0yint;
+      b0zint = -b0zint;
+      rf180 = 0;
+    }
+
+    double phase=gama*(gg1*x+gg2*y+gg3*z+b0int+chshift*epsilon2+b0*epsilon2); 
     if (rfangle!=0){
       excitation=0;
       double df=H(step,3);
@@ -2815,14 +2836,18 @@ void voxel4(const double x,const double y,double z,
 	  cout<<"rfangle_f=table_slcprof[nf]*rfangle*RFtrans= "<<rfangle_f<<endl;
 	}
         // if (fc-df/2<=f && f<=fc+df/2) {
+        if (rfangle > 3.14 && rfangle_f > 0) {
+          rfangle_f = 3.1416;
+        }
         if (rfangle_f>0){//new stuff mon dec 19
           excitation=1;
           m=free(m,tt,tissue,phase,actint);
+          if (rfangle_f > 1e-6 && rfangle_f < 3.14) {
 	  //new stuff mon dec 19
 	  //due to crushers or any gradient induced dephasing over the voxel a new initial magnetisation is introduced which is the average of the magnetisations over the voxel  
-          double xvalrf=fabs(glo_cx*(gg1+b0xint+b0x*tt));
-          double yvalrf=fabs(glo_cy*(gg2+b0yint+b0y*tt));
-          double zvalrf=fabs(glo_cz*(gg3+b0zint+b0z*tt));
+          double xvalrf=fabs(glo_cx*(gg1+b0xint+b0x*epsilon));
+          double yvalrf=fabs(glo_cy*(gg2+b0yint+b0y*epsilon));
+          double zvalrf=fabs(glo_cz*(gg3+b0zint+b0z*epsilon));
 	  double xyzrf=Sinc(xvalrf)*Sinc(yvalrf)*Sinc(zvalrf);
 	  m(1)=m(1)*xyzrf;
           m(2)=m(2)*xyzrf;
@@ -2832,7 +2857,7 @@ void voxel4(const double x,const double y,double z,
           if (opt_test==1 && fabs(z)<0.0005 ){ 
             cout<<"Projection of the magnetisation vector into the xy plane after flipping is "<<m00<<endl;
 	  }
-          trf=tnew;
+          trf90=tnew;
           grf1=g1;
           grf2=g2;
           grf3=g3;
@@ -2842,6 +2867,12 @@ void voxel4(const double x,const double y,double z,
           b0yint=0.0;
           b0zint=0.0;
 	  rftest=1;
+  }
+        if (rfangle_f > 3.14) {
+          rf180 =1; //Increment so that b0 inhomogeneities can be reversed
+          RFdist = tt;
+        }
+        trf = tnew;
 	  //}
 	}//new stuff
       }
@@ -2849,9 +2880,9 @@ void voxel4(const double x,const double y,double z,
     if (read!=0){
       readstep=readstep+1;
       if (excitation==1 || nospeedup==1){
-	double xval=fabs(glo_cx*(gg1+b0xint+b0x*tt));//b0 TIME
-	double yval=fabs(glo_cy*(gg2+b0yint+b0y*tt));//b0 TIME
-	double zval=fabs(glo_cz*(gg3+b0zint+b0z*tt));//b0 TIME add b0int like for actint. the same type of term.
+	double xval=fabs(glo_cx*(gg1+b0xint+b0x*epsilon));//b0 TIME
+	double yval=fabs(glo_cy*(gg2+b0yint+b0y*epsilon));//b0 TIME
+	double zval=fabs(glo_cz*(gg3+b0zint+b0z*epsilon));//b0 TIME add b0int like for actint. the same type of term.
       if (save_kcoord<0 || save_kcoord==v){
         coord(1,readstep)=gammabar*(gg1+b0xint+b0x*tt);//to record the distorted coordinatres in the k-space//b0 TIME
         coord(2,readstep)=gammabar*(gg2+b0yint+b0y*tt);// b0 TIME
@@ -2863,7 +2894,7 @@ void voxel4(const double x,const double y,double z,
       }
       double tmp;
 #ifdef NOTABLE
-      tmp=m00*exp(-tt*iT2+actint)*Sinc(xval)*Sinc(yval)*Sinc(zval);
+      tmp = m00 * exp(-tt*iT2) * exp(-epsilon * iT2prime + actint) * Sinc(xval) * Sinc(yval) * Sinc(zval);
       sreal[readstep-1]+=den*tmp*cos(phase);
       simag[readstep-1]+=den*tmp*sin(phase);
 #else
@@ -2888,7 +2919,7 @@ void voxel4(const double x,const double y,double z,
 	ts=table_sinc[nbin];
 	double sz=(table_sinc[nbin+1]-ts)*off + ts;
 	//CALCULATING TMP
-        tmp=m00*exp(-tt*iT2+actint)*sx*sy*sz;
+        tmp = m00 * exp(-tt*iT2) * exp(-epsilon * iT2prime + actint)  * sx * sy * sz;
 	//TESTING 
 	if (opt_test==1 && v==1 && readstep%4096==2081){
 	cout.precision(20);
@@ -2897,7 +2928,7 @@ void voxel4(const double x,const double y,double z,
 	}
       }
       else {
-        tmp=m00*exp(-tt*iT2+actint)*Sinc(xval)*Sinc(yval)*Sinc(zval);
+        tmp = m00 * exp(-tt*iT2) * exp(-epsilon * iT2prime + actint)  * Sinc(xval) * Sinc(yval) * Sinc(zval);
       }
       //TABLES SIN AND COS CALCULATION
       double phase_2pi;
