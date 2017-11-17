@@ -1406,7 +1406,7 @@ void voxel1(const double x,const double y,double z,
 
   					if (opt_test==1 && readstep%4096==0 && v==1 )	cout<<"Projection of the magnetisation vector into the xy plane after flipping is "<<m00<<endl;
 
-  					trf90 = tnew; //set ime since last 90 degree pulse
+  					trf90 = tnew; //set time since last 90 degree pulse
   					grf1 = g1;
   					grf2 = g2;
   					grf3 = g3;
@@ -1584,8 +1584,13 @@ void voxel2(const double x,const double y,const double z,
   //int rftest1=0;
   //int rftest2=0;
   double trf=0;//rftime
-  double T2=tissue(2);
-  double iT2=1/T2;
+  double trf90 =0;        //time since last 90 rf
+  double RFdist = 0; //time between 90 and 180 pulse
+  double T2 = tissue(5);
+  double T2star = tissue(2);
+  double iT2 = 1 / T2;
+  double iT2star = 1 / T2star;
+  double iT2prime = iT2star - iT2;
   double g1,g2,g3,g4;
   double grf1=0.0;
   double grf2=0.0;
@@ -1633,6 +1638,8 @@ void voxel2(const double x,const double y,const double z,
      glo_cz=gammabar*zdim;
   } 
   //we assume that for the step=1 all the values in the mainmatrix H are zero
+
+
   //////////////////////////////////////////////////////////////////////////
   //TESTING
   //////////////////////////////////////////////////////////
@@ -1730,7 +1737,12 @@ void voxel2(const double x,const double y,const double z,
     if(opt_test==1 && readstep%4096==2081 && v==1){
       cout<<"g4="<<g4<<"; grf4="<<grf4<<"; gg4="<<gg4<<endl;
     }
-    double tt=tnew-trf;
+    double tt = tnew - trf90; //time since last 90 pulse
+    double ttt = tnew - trf; //time since the last rf pulse
+    double epsilon = abs(ttt-RFdist); //RFdist is time between the 90 and 180 pulse (0 if no 180 pulse). Before the 180 pulse, epsilon measures the time since the 90 pulse. After the 180, epsilon measures how close we are to TE - at TE, epslon is 0.
+    double epsilon2 = -2* RFdist + tt; //measures the time since the 90 pulse, with a 'flip' at a 180 pulse to help keep track of the phase
+
+
     if (told>=timecourse[actstep] && actstep<=(Nact-2)){
       coeff(activation[actstep],activation[actstep+1],timecourse[actstep],timecourse[actstep+1],dT2_1,dT2_2);
       dT2_1=dT2_1*iT2*iT2;
@@ -1742,7 +1754,7 @@ void voxel2(const double x,const double y,const double z,
       cout.precision(20);
       cout<<"actstep= "<<actstep<<"; actval= "<<activation[actstep]<<"; acttime="<<timecourse[actstep]<<"; dT2_1= "<<dT2_1<<"; dT2_2= "<<dT2_2<<"; iT2= "<<iT2<<"; actint= "<<actint<<endl;
     }
-    double phase=gama*(gg1*x+gg2*y+gg3*z+gg4+(b0+chshift)*tt);
+    double phase=gama*(gg1*x+gg2*y+gg3*z+gg4+(b0+chshift)*epsilon2); //here tt has been replaced by epsilon2
     if (fabs(rfangle)>1e-05){
       excitation=0;
       double df=H(step,3);//frequency width
@@ -1792,6 +1804,11 @@ void voxel2(const double x,const double y,const double z,
         double ts=table_slcprof[nf];
         double sx=(table_slcprof[nf+1]-ts)*off + ts;
         double rfangle_f=sx*rfangle*RFtrans;//RFtrans are values 0 to 1 to derscribe the inhomogeneity f the receive RF field. 1 is for perfectly homog;
+
+        //If the pulse was a 180 and this voxel is excited, set the flip angle to 180 to prevent it being treated as an excitation pulse later on. 
+        if (rfangle > 3.14 && rfangle_f > 0) {
+          rfangle_f = 3.1416;
+        }
 	if (opt_test==1 && readstep%4096==0 && v==1 ){
 	  cout<<"table_slcprof[nf]= "<<sx<<"; rfangle= "<<rfangle<<"; RFtrans= "<<RFtrans<<endl;
 	  cout<<"rfangle_f=table_slcprof[nf]*rfangle*RFtrans= "<<rfangle_f<<endl;
@@ -1803,6 +1820,7 @@ void voxel2(const double x,const double y,const double z,
           cout<<free_cout(m,tt,tissue,phase,actint)<<endl;
 	 }
           m=free(m,tt,tissue,phase,actint);
+          if (rfangle_f > 0 && rfangle_f < 3.14)  {
 	  //new stuff mon dec 19
 	  //due to crushers or any gradient induced dephasing over the voxel a new initial magnetisation is introduced which is the average of the magnetisations over the voxel  
           double xvalrf=fabs(glo_cx*(gg1+b0x*tt));
@@ -1817,7 +1835,7 @@ void voxel2(const double x,const double y,const double z,
           if (opt_test==1 && readstep%4096==0 && v==1){ 
             cout<<"Projection of the magnetisation vector into the xy plane after flipping is "<<m00<<endl;
 	  }
-          trf=tnew;
+          trf90 = tnew; //set time since last 90 degree pulse
           grf1=g1;
           grf2=g2;
           grf3=g3;
@@ -1825,8 +1843,14 @@ void voxel2(const double x,const double y,const double z,
 	  actint=0.0;
 	  //}
 	}//new stuff
+  if (rfangle_f > 3.14) {
+   RFdist = tt; //set time between 90 and 180 pulses
+  }   
+  trf = tnew; //set time since last RF pulse
+
       }
     }
+  }
     if (read!=0){
       readstep=readstep+1;
       if (excitation==1 || nospeedup==1){
@@ -1844,7 +1868,8 @@ void voxel2(const double x,const double y,const double z,
         }
 	double tmp;
 #ifdef NOTABLE
-        tmp=m00*exp(-tt*iT2+actint)*Sinc(xval)*Sinc(yval)*Sinc(zval);
+        tmp = m00 * exp(-tt*iT2) * exp(-epsilon * iT2prime + actint) * Sinc(xval) * Sinc(yval) * Sinc(zval); //now use epsilon to calculate the T2' attenuation. If no 180 pulse, epsilon = tt, if there has been a 180 then epsilon will = 0 at TE.
+
         sreal[readstep-1]+=den*tmp*cos(phase);
         simag[readstep-1]+=den*tmp*sin(phase);
 #else
@@ -1869,7 +1894,7 @@ void voxel2(const double x,const double y,const double z,
 	  ts=table_sinc[nbin];
 	  double sz=(table_sinc[nbin+1]-ts)*off + ts;
 	  //
-          tmp=m00*exp(-tt*iT2+actint)*sx*sy*sz;
+          tmp = m00 * exp(-tt*iT2) * exp(-epsilon * iT2prime + actint)  * sx * sy * sz;
 	  if (opt_test==1 && readstep%4096==2081 && v==1){
 	    cout.precision(20);
 	    cout<<"table_sinc(xval)= "<<sx<<"; table_sinc(yval)= "<<sy<<"; table_sinc(zval)= "<<sz<<endl;
@@ -1877,7 +1902,8 @@ void voxel2(const double x,const double y,const double z,
 	  }
         }
         else {
-          tmp=m00*exp(-tt*iT2+actint)*Sinc(xval)*Sinc(yval)*Sinc(zval);
+        tmp = m00 * exp(-tt*iT2) * exp(-epsilon * iT2prime + actint) * Sinc(xval) * Sinc(yval) * Sinc(zval); //now use epsilon to calculate the T2' attenuation. If no 180 pulse, epsilon = tt, if there has been a 180 then epsilon will = 0 at TE.
+
         }
         //TABLES SIN AND COS CALCULATION
         double phase_2pi;
