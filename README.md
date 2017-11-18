@@ -9,7 +9,7 @@ pulse.cc
 
 possum.cc
 
-* When reading in the MR parameters (MRpar) a fifth column with T2 values is now expected. I've also slightly updated the T2* values to bring them in line with values from the literature.
+* When reading in the MR parameters (MRpar) a fifth column with T2 values is now expected. I've also slightly updated the T2* values to bring them in line with values from the literature. If a four-column MRpar file is supplied, the program will assume T2=T2\*.
 
 Old 3T MRpar:
 

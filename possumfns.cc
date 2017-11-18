@@ -1241,11 +1241,25 @@ void voxel1(const double x,const double y,double z,
 	double trf = 0;			//rftime
   double trf90 =0;        //time since last 90 rf
   double RFdist = 0; //time between 90 and 180 pulse
-  double T2 = tissue(5);
-  double T2star = tissue(2);
-  double iT2 = 1 / T2;
-  double iT2star = 1 / T2star;
-  double iT2prime = iT2star - iT2;
+
+  double T2 =0;
+  double T2star =0;
+  double iT2 =0;
+  double iT2star =0;
+  double iT2prime =0;  
+  if (tissue.Ncols() == 5){
+    T2 = tissue(5);
+    T2star = tissue(2);
+    iT2 = 1 / T2;
+    iT2star = 1 / T2star;
+    iT2prime = iT2star - iT2; 
+  }
+  else if (tissue.Ncols() == 4) {
+    cout << "Old-style MRpar file provided. Image will have T2* contrast." << endl;
+    T2 = tissue(2); //Set T2 value to be equal to the T2* value provided
+    iT2 = 1 / T2;
+    iT2prime = 0;
+  }
 	int rftest = 0;
 	double g1,g2,g3,grf1,grf2,grf3; 
 	g1=0.0; g2=0.0; g3=0.0; grf1=0.0; grf2=0.0; grf3=0.0;
@@ -1586,11 +1600,25 @@ void voxel2(const double x,const double y,const double z,
   double trf=0;//rftime
   double trf90 =0;        //time since last 90 rf
   double RFdist = 0; //time between 90 and 180 pulse
-  double T2 = tissue(5);
-  double T2star = tissue(2);
-  double iT2 = 1 / T2;
-  double iT2star = 1 / T2star;
-  double iT2prime = iT2star - iT2;
+
+  double T2 =0;
+  double T2star =0;
+  double iT2 =0;
+  double iT2star =0;
+  double iT2prime =0; 
+  if (tissue.Ncols() == 5){
+    T2 = tissue(5);
+    T2star = tissue(2);
+    iT2 = 1 / T2;
+    iT2star = 1 / T2star;
+    iT2prime = iT2star - iT2; 
+  }
+  else if (tissue.Ncols() == 4) {
+    cout << "Old-style MRpar file provided. Image will have T2* contrast." << endl;
+    T2 = tissue(2); //Set T2 value to be equal to the T2* value provided
+    iT2 = 1 / T2;
+    iT2prime = 0;
+  }
   double g1,g2,g3,g4;
   double grf1=0.0;
   double grf2=0.0;
@@ -2055,11 +2083,25 @@ void voxel3(const double x,const double y,const double z,
   ////////////////////////////////////////////////////////////////////////
   double chshift=tissue(4);//chemical shift
   int numpoints=H.Nrows();//number of timepoints in the eventsequencer matrix
-  double T2 = tissue(5);
-  double T2star = tissue(2);
-  double iT2 = 1 / T2;
-  double iT2star = 1 / T2star;
-  double iT2prime = iT2star - iT2;
+
+  double T2 =0;
+  double T2star =0;
+  double iT2 =0;
+  double iT2star =0;
+  double iT2prime =0; 
+  if (tissue.Ncols() == 5){
+    T2 = tissue(5);
+    T2star = tissue(2);
+    iT2 = 1 / T2;
+    iT2star = 1 / T2star;
+    iT2prime = iT2star - iT2; 
+  }
+  else if (tissue.Ncols() == 4) {
+    cout << "Old-style MRpar file provided. Image will have T2* contrast." << endl;
+    T2 = tissue(2); //Set T2 value to be equal to the T2* value provided
+    iT2 = 1 / T2;
+    iT2prime = 0;
+  }
   double g1,g2,g3,g4;
   double rr1,rr2,rr3,trr;
   Matrix coord(3,nreadp);
@@ -2676,11 +2718,27 @@ void voxel4(const double x,const double y,double z,
   double trf = 0;      //time since last rf
   double trf90 =0;     //time since last 90 rf
   double RFdist = 0;   //time between 90 and 180 pulse
-  double T2 = tissue(5);
-  double T2star = tissue(2);
-  double iT2 = 1 / T2;
-  double iT2star = 1 / T2star;
-  double iT2prime = iT2star - iT2;
+
+  double T2 =0;
+  double T2star =0;
+  double iT2 =0;
+  double iT2star =0;
+  double iT2prime =0;  
+  if (tissue.Ncols() == 5){
+    T2 = tissue(5);
+    T2star = tissue(2);
+    iT2 = 1 / T2;
+    iT2star = 1 / T2star;
+    iT2prime = iT2star - iT2; 
+  }
+  else if (tissue.Ncols() == 4) {
+    cout << "Old-style MRpar file provided. Image will have T2* contrast." << endl;
+    T2 = tissue(2); //Set T2 value to be equal to the T2* value provided
+    iT2 = 1 / T2;
+    iT2prime = 0;
+  }
+
+
   int rftest=0;
   double g1,g2,g3,grf1,grf2,grf3; 
   g1=0.0; g2=0.0; g3=0.0; grf1=0.0; grf2=0.0; grf3=0.0;
