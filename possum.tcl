@@ -187,7 +187,7 @@ proc possum { w } {
     frame $w.pulseseq
 	array set temp [list a 1 b 2]
 	label $w.pulseseq.seqlab -text "Sequence type:" -width 15 -anchor w
-	optionMenu2 $w.pulseseq.seqopt entries($w,seqtype) -command "possum:settimings $w; possum:updateTRSLC $w; possum:updateTRSLC2 $w; possum:custompulse $w" "epi" "Echo Planar Imaging (EPI)" "ge" "Gradient Echo (GE)" "custom" "Custom Pulse Sequence"
+	optionMenu2 $w.pulseseq.seqopt entries($w,seqtype) -command "possum:settimings $w; possum:updateTRSLC $w; possum:updateTRSLC2 $w; possum:custompulse $w" "epi" "Echo Planar Imaging (EPI)"  "se-epi" "Spin-Echo Planar Imaging (SE-EPI)" "ge" "Gradient Echo (GE)" "se" "Spin Echo (SE)" "custom" "Custom Pulse Sequence"
     pack $w.pulseseq.seqlab $w.pulseseq.seqopt -in $w.pulseseq -side left -anchor w
 
     frame $w.t
@@ -1101,13 +1101,17 @@ proc possum:updateTRSLC {w} {
     global entries guivars FSLDIR
 #tejas-edit
     if { $entries($w,autotrslc) == 1 && $entries($w,seqtype) == "epi"} {
-	set tmp [ expr $entries($w,tr)*1.0/$entries($w,outsize_nz) ]
+    set tmp [ expr $entries($w,tr)*1.0/$entries($w,outsize_nz) ]
         set entries($w,trslc) [ possum:modTRslice $tmp ]  
     }
-    if { $entries($w,seqtype) != "epi" } {
-	set entries($w,trslc) 0
-#	pack forget $w.t.trs
-	$w.trs.z configure -state disabled
+    if { $entries($w,autotrslc) == 1 && $entries($w,seqtype) == "se-epi"} {
+    set tmp [ expr $entries($w,tr)*1.0/$entries($w,outsize_nz) ]
+        set entries($w,trslc) [ possum:modTRslice $tmp ]  
+    }
+    if { $entries($w,seqtype) != "epi" && $entries($w,seqtype) != "se-epi" } {
+    set entries($w,trslc) 0
+#   pack forget $w.t.trs
+    $w.trs.z configure -state disabled
     }
 }
 
@@ -2115,21 +2119,29 @@ proc possum:savescripts { w seqtype te tr trslc nx ny nz dx dy dz zstart angle n
 }
 
 proc possum:settimings { w } {
-	global entries
-	if { $entries($w,seqtype) == "epi" } {
-		set entries($w,te) 0.030
-		set entries($w,tr) 3
-		set entries($w,trslc) 0.12
-	} elseif {$entries($w,seqtype) == "ge" } {
-		set entries($w,te) 0.01
-		set entries($w,tr) 0.7
-		set entries($w,trslc) 0
-	} else {
-		set entries($w,te) 0
-		set entries($w,tr) 0
-		set entries($w,trslc) 0
-	}
-	update idletasks
+    global entries
+    if { $entries($w,seqtype) == "epi" } {
+        set entries($w,te) 0.030
+        set entries($w,tr) 3
+        set entries($w,trslc) 0.12
+    } elseif {$entries($w,seqtype) == "se-epi" } {
+        set entries($w,te) 0.090
+        set entries($w,tr) 3
+        set entries($w,trslc) 0.16
+    } elseif {$entries($w,seqtype) == "ge" } {
+        set entries($w,te) 0.01
+        set entries($w,tr) 0.7
+        set entries($w,trslc) 0
+    } elseif {$entries($w,seqtype) == "se" } {
+        set entries($w,te) 0.01
+        set entries($w,tr) 0.7
+        set entries($w,trslc) 0
+    } else {
+        set entries($w,te) 0
+        set entries($w,tr) 0
+        set entries($w,trslc) 0
+    }
+    update idletasks
 }
 
 proc possum:previewactiv { w } {
@@ -2456,7 +2468,7 @@ proc possum:updateACTprop { w { filename foo } } {
 
 proc possum:updatecomptime { w { filename foo } } {
     global entries FSLDIR
-    if { $entries($w,seqtype) == "epi" } {
+    if { $entries($w,seqtype) == "epi" || $entries($w,seqtype) == "se-epi" } {
 
 	    # Quick fix : Multiply computed time by factor
 	    set multiplier 2
@@ -2507,7 +2519,7 @@ proc possum:updatecomptime { w { filename foo } } {
 	    } else {
 		set entries($w,comptime) "[ possum:twosigfigs $tottime ] seconds"
 	    }
-    } elseif { $entries($w,seqtype) == "ge" } {
+    } elseif { $entries($w,seqtype) == "ge" || $entries($w,seqtype) == "se"} {
 	    # number of voxels per 1mm3
 	    set Nvpv [ expr 1 / ( $entries($w,vcX) * $entries($w,vcY) * $entries($w,vcZ) )  ]
 	    set dimX [ expr $entries($w,vcX) * $entries($w,inNx) ] 
@@ -2579,7 +2591,7 @@ proc possum:pulsecheck { w obvol mrpar seqtype te tr trslc outsize_nx outsize_ny
     global entries FSLDIR
     set chkwarning ""
     set chkmessage ""
-    if { $seqtype == "epi" } {
+    if { $seqtype == "epi" || $seqtype == "se-epi" } {
 	    set dx [ expr $outsize_dx * 0.001 ]
 	    set dy [ expr $outsize_dy * 0.001 ]
 	    set dz [ expr $outsize_dz * 0.001 ]
@@ -2729,7 +2741,7 @@ proc possum:pulsecheck { w obvol mrpar seqtype te tr trslc outsize_nx outsize_ny
 		pack $w0.msg1 $w0.msg2 $w0.cancel -in $w0
 	}
 
-    } elseif { $seqtype == "ge" } {
+    } elseif { $seqtype == "ge" || $seqtype == "se"} {
 	    set dx [ expr $outsize_dx * 0.001 ]
 	    set dy [ expr $outsize_dy * 0.001 ]
 	    set dz [ expr $outsize_dz * 0.001 ]
@@ -3046,9 +3058,9 @@ proc possum:procmakedir { w comptime obvol mrpar seqtype te tr trslc outsize_nx 
     catch { exec sh -c "${FSLDIR}/bin/imrm $out/b0newref" } oval
     if { $entries($w,custompulse_yn) == 0 } {
 	    set seq $seqtype
-	    if { $seq == "epi" } {
+	    if { $seq == "epi" || $seq == "se-epi"} {
 		    set pulsecom  "${POSSUMDIR}/bin/pulse -i $out/brain -o ${out}/pulse --te=${te} --tr=${tr} --trslc=${trslc} --nx=${outsize_nx} --ny=${outsize_ny} --dx=${dx} --dy=${dy} --maxG=${maxG} --riset=${riseT} --bw=${bw} --numvol=${numvol} --numslc=${outsize_nz} --slcthk=${dz} --zstart=${zs} --seq=${seq} --slcdir=${slcdir}${plus} --readdir=${readdir}$entries($w,pluss) --phasedir=${phasedir}$entries($w,pluss) --gap=$gap -v --cover=$cover --angle=$flipangle"
-	    } elseif { $seq == "ge" } {
+	    } elseif { $seq == "ge" || $seq == "se"} {
 		    set pulsecom  "${POSSUMDIR}/bin/pulse -i $out/brain -o ${out}/pulse --te=${te} --tr=${tr} --nx=${outsize_nx} --ny=${outsize_ny} --dx=${dx} --dy=${dy} --maxG=${maxG} --riset=${riseT} --bw=${bw} --numvol=${numvol} --numslc=${outsize_nz} --slcthk=${dz} --zstart=${zs} --seq=${seq} --slcdir=${slcdir}${plus} --readdir=${readdir}$entries($w,pluss) --phasedir=${phasedir}$entries($w,pluss) --gap=$gap -v --cover=$cover --angle=$flipangle"
 	    }
 	    catch { exec sh -c "echo $pulsecom >> $out/pulse.com" } oval
